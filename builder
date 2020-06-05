@@ -31,16 +31,14 @@
 CH_REPO="${CH_REPO:-https://github.com/yandex/ClickHouse}"
 
 # Git version of ClickHouse that we package
-CH_VERSION="${CH_VERSION:-20.3.8.53}"
+CH_VERSION="${CH_VERSION:-20.4.4.18}"
 
 # Fill if some commits need to be cherry-picked before build
 #CH_EXTRA_COMMITS=( 54a5b801b708701b1ddbda95887465b9f7ae5740 )
 CH_EXTRA_COMMITS=()
 
 # Git tag marker (stable/testing)
-CH_TAG="${CH_TAG:-lts}"
-#CH_TAG="${CH_TAG:-stable}"
-#CH_TAG="${CH_TAG:-testing}"
+CH_TAG="${CH_TAG:-stable}"
 
 # Hostname of the server used to publish packages
 SSH_REPO_SERVER="${SSH_REPO_SERVER:-10.81.1.162}"
@@ -105,7 +103,7 @@ function set_rpmbuild_dirs()
 	RPMS_DIR="$RPMBUILD_ROOT_DIR/RPMS/x86_64"
 
 	# Where source files would be kept
-	SOURCES_DIR="$RPMBUILD_ROOT_DIR/SOURCES"
+	SOURCES_DIR="$CH_SRC_ROOT_DIR"
 
 	# Where RPM spec file would be kept
 	SPECS_DIR="$RPMBUILD_ROOT_DIR/SPECS"
@@ -401,16 +399,10 @@ function build_RPMs()
 
 
 	banner "Setup path to compilers"
-	if os_centos || os_ol; then
-		export CMAKE="cmake3"
-		export CC="/opt/rh/devtoolset-${DEVTOOLSET_VERSION}/root/usr/bin/gcc"
-		export CXX="/opt/rh/devtoolset-${DEVTOOLSET_VERSION}/root/usr/bin/g++"
-		#export CXXFLAGS="${CXXFLAGS} -Wno-maybe-uninitialized"
-	else
-		export CMAKE=cmake
-		export CC=gcc
-		export CXX=g++
-	fi
+	export CMAKE=cmake
+	export CC=gcc
+	export CXX=g++
+
 
 	echo "CMAKE=$CMAKE"
 	echo "CC=$CC"
@@ -421,12 +413,12 @@ function build_RPMs()
 
 	banner "Build RPMs"
 
-	banner "Build SRPMs"
-	if rpmbuild -v -bs "$SPECS_DIR/clickhouse.spec"; then
-		echo "SRPMs build completed"
-	else
-		banner "SRPMs build FAILED"
-	fi
+	# banner "Build SRPMs"
+	# if rpmbuild -v -bs "$SPECS_DIR/clickhouse.spec"; then
+		# echo "SRPMs build completed"
+	# else
+		# banner "SRPMs build FAILED"
+	# fi
 	
 	
 	banner "Build RPMs"
@@ -441,7 +433,6 @@ function build_RPMs()
 
 	# Display results
 	list_RPMs
-	list_SRPMs
 }
 
 ##
@@ -498,23 +489,19 @@ function setup_local_build()
 {
 	setup_local_build_dirs
 
-	# Try to extract CH version specification from sources
-	# In case we can extract version spec this means we are inside CH sources
-	# in case we are unable to extract version spec there is no reason to continue build
 
-	# For v18.14.13-stable
 
 	# Ex.: 54409
-	VERSION_REVISION=$(grep "set(VERSION_REVISION" ${CH_SRC_ROOT_DIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\)$/\1/' | sed 's/[) ].*//')
+	VERSION_REVISION=$(grep "set(VERSION_REVISION" ${CH_SRC_ROOT_DIR}/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\)$/\1/' | sed 's/[) ].*//')
 
 	# Ex.: 18 for v18.14.13-stable
-	VERSION_MAJOR=$(grep "set(VERSION_MAJOR" ${CH_SRC_ROOT_DIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_MAJOR \(.*\)/\1/' | sed 's/[) ].*//')
+	VERSION_MAJOR=$(grep "set(VERSION_MAJOR" ${CH_SRC_ROOT_DIR}/cmake/version.cmake | sed 's/^.*VERSION_MAJOR \(.*\)/\1/' | sed 's/[) ].*//')
 
 	# Ex.:14 for v18.14.13-stable
-	VERSION_MINOR=$(grep "set(VERSION_MINOR" ${CH_SRC_ROOT_DIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_MINOR \(.*\)/\1/' | sed 's/[) ].*//')
+	VERSION_MINOR=$(grep "set(VERSION_MINOR" ${CH_SRC_ROOT_DIR}/cmake/version.cmake | sed 's/^.*VERSION_MINOR \(.*\)/\1/' | sed 's/[) ].*//')
 
 	# Ex.:13 for v18.14.13-stable
-	VERSION_PATCH=$(grep "set(VERSION_PATCH" ${CH_SRC_ROOT_DIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_PATCH \(.*\)/\1/' | sed 's/[) ].*//')
+	VERSION_PATCH=$(grep "set(VERSION_PATCH" ${CH_SRC_ROOT_DIR}/cmake/version.cmake | sed 's/^.*VERSION_PATCH \(.*\)/\1/' | sed 's/[) ].*//')
 
 	echo "Extracting from src: v${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH} rev:$VERSION_REVISION"
 
@@ -551,6 +538,8 @@ function setup_local_build()
 	# Expected result v18.14.13
 	# Extract everything before the first '-' in extracted git tag
 	VER=$(echo $GIT_TAG | awk 'BEGIN {FS="-"}{print $1}')
+    VER=`echo $VER | cut -d '.' -f 1-3`   #cut redundant fields, such as "v20.4.4.18"
+    
 
 	if [ "${FLAG_NO_VERSION_CHECK}" ]; then
 		# Do not validate version, e.g. for master or PR builds.
@@ -779,7 +768,7 @@ download-sources,\
 from-sources-in-BUILD-dir,\
 from-sources-in-SOURCES-dir,\
 from-archive,\
-from-sources,\
+from-sources:,\
 debuginfo:,\
 cmake-build-type:,\
 docker,\
@@ -854,6 +843,10 @@ while true; do
 		;;
 	--from-sources)
 		FLAG_FROM_SOURCES='yes'
+        shift
+        CH_SRC_ROOT_DIR=$1
+        SOURCES_DIR=$1
+        export MYSRC=true
 		;;
 	--debuginfo)
 		# Arg is recognized, shift to the value, which is the next arg
@@ -1114,8 +1107,7 @@ build)
 
 			set_print_commands
 			ensure_os_rpm_based
-
-			setup_local_build
+			
 			build_spec_file
 			build_RPMs
 
